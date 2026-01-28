@@ -55,7 +55,7 @@ const Dashboard: React.FC<Props> = ({
       <header className="flex justify-between items-end border-b border-dark-border pb-6">
         <div>
           <h2 className="text-4xl font-black italic tracking-tighter uppercase leading-none text-primary-text">Hallo Stan! 👋</h2>
-          <p className="text-secondary-text mt-2 font-bold uppercase text-xs tracking-widest">Breid je limieten uit.</p>
+          <p className="text-secondary-text mt-2 font-bold uppercase text-xs tracking-widest text-secondary-text">Breid je limieten uit.</p>
         </div>
         <button 
           onClick={onSync}

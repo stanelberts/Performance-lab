@@ -152,7 +152,7 @@ const BenchmarksView: React.FC<Props> = ({
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-black uppercase italic tracking-tighter text-primary-text">Benchmarks</h2>
-          <p className="text-secondary-text uppercase font-bold text-[10px] tracking-widest mt-1">Status check. Verleg je grenzen.</p>
+          <p className="text-secondary-text uppercase font-black text-[10px] tracking-widest mt-1">Status check. Verleg je grenzen.</p>
         </div>
         <div className="flex bg-charcoal p-1 rounded-2xl border border-dark-border">
           <button 
