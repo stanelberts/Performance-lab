@@ -8,7 +8,8 @@ import {
   Tag, 
   Zap, 
   Trophy,
-  ClipboardList
+  ClipboardList,
+  ArrowLeft
 } from 'lucide-react';
 import { MOCK_ACTIVITIES, DEFAULT_LABELS, MOCK_TEMPLATES, HYROX_STATIONS } from './mockData';
 import { Activity, Label, DashboardStats, WorkoutTemplate } from './types';
@@ -20,17 +21,27 @@ import SettingsView from './components/SettingsView';
 import BenchmarksView from './components/BenchmarksView';
 import WorkoutsView from './components/WorkoutsView';
 import { exchangeStravaCode, fetchStravaActivities } from './services/strava';
+import { decodeActivityFromUrl } from './services/share';
 
 const App: React.FC = () => {
+  // Veilige initialisatie van activiteiten
   const [activities, setActivities] = useState<Activity[]>(() => {
-    const saved = localStorage.getItem('lab_activities');
-    return saved ? JSON.parse(saved) : MOCK_ACTIVITIES;
+    try {
+      const saved = localStorage.getItem('lab_activities');
+      return saved ? JSON.parse(saved) : MOCK_ACTIVITIES;
+    } catch (e) {
+      console.error("Fout bij laden activiteiten:", e);
+      return MOCK_ACTIVITIES;
+    }
   });
+
   const [labels, setLabels] = useState<Label[]>(DEFAULT_LABELS);
   const [templates, setTemplates] = useState<WorkoutTemplate[]>(MOCK_TEMPLATES);
   const [activeTab, setActiveTab] = useState<'home' | 'list' | 'benchmarks' | 'workouts' | 'labels' | 'settings'>('home');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [sharedActivity, setSharedActivity] = useState<Partial<Activity> | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const [stravaToken, setStravaToken] = useState<string | null>(localStorage.getItem('strava_access_token'));
 
@@ -56,27 +67,39 @@ const App: React.FC = () => {
   );
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    
-    if (code) {
-      const handleAuth = async () => {
-        setIsSyncing(true);
-        const configStr = localStorage.getItem('strava_config');
-        if (configStr) {
-          try {
-            const config = JSON.parse(configStr);
-            const data = await exchangeStravaCode(config, code);
-            localStorage.setItem('strava_access_token', data.access_token);
-            setStravaToken(data.access_token);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } catch (err) {
-            console.error(err);
-          }
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const shareData = urlParams.get('share');
+      
+      if (shareData) {
+        const decoded = decodeActivityFromUrl(shareData);
+        if (decoded) {
+          setSharedActivity(decoded);
         }
-        setIsSyncing(false);
-      };
-      handleAuth();
+      }
+
+      if (code) {
+        const handleAuth = async () => {
+          setIsSyncing(true);
+          const configStr = localStorage.getItem('strava_config');
+          if (configStr) {
+            try {
+              const config = JSON.parse(configStr);
+              const data = await exchangeStravaCode(config, code);
+              localStorage.setItem('strava_access_token', data.access_token);
+              setStravaToken(data.access_token);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            } catch (err) {
+              console.error(err);
+            }
+          }
+          setIsSyncing(false);
+        };
+        handleAuth();
+      }
+    } catch (e) {
+      setInitError("Er is een fout opgetreden bij het laden van de URL parameters.");
     }
   }, []);
 
@@ -99,6 +122,7 @@ const App: React.FC = () => {
       });
     } catch (err) {
       console.error(err);
+      alert("Synchronisatie mislukt. Controleer je internetverbinding.");
     }
     setIsSyncing(false);
   };
@@ -134,22 +158,72 @@ const App: React.FC = () => {
     localStorage.setItem('lab_activities', JSON.stringify(newActivities));
   };
 
-  const handleCreateActivity = (newActivity: Activity) => {
-    const updated = [newActivity, ...activities];
+  // Fixed: handleBulkLabel implementation
+  const handleBulkLabel = (ids: string[], label: Label) => {
+    const updated = activities.map(a => {
+      if (ids.includes(a.id)) {
+        const hasLabel = a.labels.some(l => l.id === label.id);
+        return hasLabel ? a : { ...a, labels: [...a.labels, label] };
+      }
+      return a;
+    });
     setActivities(updated);
     localStorage.setItem('lab_activities', JSON.stringify(updated));
-    setActiveTab('list');
   };
 
-  const handleBulkLabel = (activityIds: string[], newLabel: Label) => {
-    const updated = activities.map(a => 
-      activityIds.includes(a.id) 
-        ? { ...a, labels: Array.from(new Set([...a.labels, newLabel])) } 
-        : a
-    );
+  // Fixed: handleCreateActivity implementation
+  const handleCreateActivity = (activity: Activity) => {
+    const updated = [activity, ...activities];
     setActivities(updated);
     localStorage.setItem('lab_activities', JSON.stringify(updated));
+    setSelectedActivityId(activity.id);
   };
+
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-charcoal flex items-center justify-center p-8 text-center">
+        <div className="space-y-4">
+          <Zap className="mx-auto text-red-500" size={48} />
+          <h1 className="text-xl font-black uppercase italic tracking-tighter">Oeps! Lab Error</h1>
+          <p className="text-secondary-text text-sm">{initError}</p>
+          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-electric-blue rounded-full text-xs font-black uppercase">Herladen</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Shared View Render
+  if (sharedActivity) {
+    return (
+      <div className="min-h-screen bg-charcoal text-primary-text flex flex-col">
+        <header className="p-6 border-b border-dark-border flex justify-between items-center bg-charcoal/50 backdrop-blur-md sticky top-0 z-50">
+          <button onClick={() => {
+            setSharedActivity(null);
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }} className="flex items-center gap-2 text-secondary-text hover:text-white transition-colors uppercase text-[10px] font-black tracking-widest">
+            <ArrowLeft size={16} /> Sluiten
+          </button>
+          <h1 className="text-sm font-black italic tracking-tighter text-electric-blue flex items-center gap-1">
+            <Zap className="fill-electric-blue" size={16} /> PERFORMANCE LAB
+          </h1>
+          <div className="w-10" />
+        </header>
+        <div className="flex-1 overflow-y-auto">
+          <ActivityDetailView 
+            activity={sharedActivity as Activity} 
+            allActivities={[]}
+            onBack={() => {
+              setSharedActivity(null);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }}
+            onUpdateLabels={() => {}}
+            availableLabels={[]}
+            isSharedView={true}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen pb-20 md:pb-0 md:pl-64 bg-charcoal text-primary-text">
@@ -249,24 +323,27 @@ const App: React.FC = () => {
   );
 };
 
-const NavItem = ({ icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) => (
+// Fixed: NavItem component added
+const NavItem = ({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) => (
   <button 
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${active ? 'bg-electric-blue/10 text-electric-blue font-bold border-l-4 border-electric-blue' : 'text-secondary-text hover:text-primary-text hover:bg-dark-border/20'}`}
+    className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-300 ${active ? 'bg-electric-blue text-white shadow-lg shadow-electric-blue/20' : 'text-secondary-text hover:bg-dark-border/50 hover:text-primary-text'}`}
   >
     {icon}
-    <span className="uppercase text-xs tracking-widest">{label}</span>
+    <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
   </button>
 );
 
-const MobileNavItem = ({ icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) => (
+// Fixed: MobileNavItem component added
+const MobileNavItem = ({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) => (
   <button 
     onClick={onClick}
-    className={`flex flex-col items-center gap-1 ${active ? 'text-electric-blue' : 'text-secondary-text'}`}
+    className={`flex flex-col items-center gap-1 transition-all ${active ? 'text-electric-blue' : 'text-secondary-text'}`}
   >
     {icon}
-    <span className="text-[9px] uppercase font-black tracking-widest">{label}</span>
+    <span className="text-[8px] font-black uppercase tracking-widest">{label}</span>
   </button>
 );
 
+// Fixed: Default export added
 export default App;

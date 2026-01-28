@@ -3,7 +3,10 @@
 <html lang="nl" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#121212">
     <title>Stan's Performance Lab</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -29,6 +32,8 @@
         background-color: #121212;
         color: #E0E0E0;
         -webkit-font-smoothing: antialiased;
+        /* Voorkom scroll-bounce op iOS */
+        overscroll-behavior-y: contain;
       }
       .rough-card {
         background: #121212;
@@ -48,6 +53,13 @@
         background: #444444;
         border-radius: 10px;
       }
+      
+      /* Mobile specifieke tweaks */
+      @media (max-width: 640px) {
+        .mobile-bottom-nav-fix {
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+      }
     </style>
   <script type="importmap">
 {
@@ -64,7 +76,7 @@
 }
 </script>
 </head>
-  <body class="bg-charcoal text-primary-text">
+  <body class="bg-charcoal text-primary-text selection:bg-electric-blue selection:text-white">
     <div id="root"></div>
   </body>
 </html>

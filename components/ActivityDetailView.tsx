@@ -1,11 +1,12 @@
 
 import React, { useMemo, useState } from 'react';
 import { Activity, Label, HyroxPart } from '../types';
-import { ArrowLeft, Calendar, Tag, TrendingDown, TrendingUp, Zap, History, Trophy, Medal, Sparkles, Loader2 } from 'lucide-react';
-import { formatDuration, formatPace, getComparison, getEfficiencyFactor } from '../utils/analysis';
+import { ArrowLeft, Calendar, Tag, TrendingDown, TrendingUp, Zap, History, Trophy, Medal, Sparkles, Loader2, Share2, Check, X, QrCode, Copy, ExternalLink } from 'lucide-react';
+import { formatDuration, formatPace, getEfficiencyFactor } from '../utils/analysis';
 import { ActivityIconByType } from './Dashboard';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell, LineChart, Line, CartesianGrid } from 'recharts';
 import { analyzeWorkout } from '../services/ai';
+import { encodeActivityForSharing } from '../services/share';
 
 interface Props {
   activity: Activity;
@@ -13,27 +14,37 @@ interface Props {
   onBack: () => void;
   onUpdateLabels: (labels: Label[]) => void;
   availableLabels: Label[];
+  isSharedView?: boolean;
 }
 
-const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, onUpdateLabels, availableLabels }) => {
+const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, onUpdateLabels, availableLabels, isSharedView = false }) => {
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const shareUrl = useMemo(() => {
+    const code = encodeActivityForSharing(activity);
+    return `${window.location.origin}${window.location.pathname}?share=${code}`;
+  }, [activity]);
 
   const currentLabels = activity.labels.map(l => l.name);
   
   const history = useMemo(() => {
-    if (currentLabels.length === 0) return [];
+    if (currentLabels.length === 0 || isSharedView) return [];
     return allActivities
       .filter(a => a.labels.some(l => currentLabels.includes(l.name)))
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-  }, [activity, allActivities]);
+  }, [activity, allActivities, isSharedView]);
 
   const previousActivity = useMemo(() => {
+    if (isSharedView) return undefined;
     const sortedHistory = [...history].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     return sortedHistory.find(a => a.id !== activity.id && new Date(a.startDate) < new Date(activity.startDate));
-  }, [history, activity]);
+  }, [history, activity, isSharedView]);
 
   const trendData = useMemo(() => {
+    if (isSharedView) return [];
     return history.map(a => ({
       date: new Date(a.startDate).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' }),
       pace: parseFloat((16.6667 / (a.distance / a.movingTime)).toFixed(2)),
@@ -41,7 +52,7 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
       efficiency: getEfficiencyFactor(a) ? parseFloat((getEfficiencyFactor(a)! * 100).toFixed(2)) : null,
       isCurrent: a.id === activity.id
     })).slice(-10);
-  }, [history, activity]);
+  }, [history, activity, isSharedView]);
 
   const handleAiAnalysis = async () => {
     setIsAnalyzing(true);
@@ -50,7 +61,15 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
     setIsAnalyzing(false);
   };
 
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 3000);
+    });
+  };
+
   const toggleLabel = (label: Label) => {
+    if (isSharedView) return;
     const hasLabel = activity.labels.some(l => l.id === label.id);
     if (hasLabel) {
       onUpdateLabels(activity.labels.filter(l => l.id !== label.id));
@@ -61,15 +80,66 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
 
   return (
     <div className="min-h-screen bg-charcoal pb-20 animate-in slide-in-from-right duration-300">
-      <div className="bg-charcoal/90 backdrop-blur-md border-b border-dark-border sticky top-0 z-10 px-4 py-4 flex items-center justify-between">
-        <button onClick={onBack} className="p-2 hover:bg-dark-border rounded-full transition-colors text-primary-text">
-          <ArrowLeft size={24} />
-        </button>
-        <h3 className="font-black uppercase italic tracking-tighter text-lg text-primary-text truncate max-w-[200px]">{activity.name}</h3>
-        <div className="w-10" />
-      </div>
+      {!isSharedView && (
+        <div className="bg-charcoal/90 backdrop-blur-md border-b border-dark-border sticky top-0 z-10 px-4 py-4 flex items-center justify-between">
+          <button onClick={onBack} className="p-2 hover:bg-dark-border rounded-full transition-colors text-primary-text">
+            <ArrowLeft size={24} />
+          </button>
+          <h3 className="font-black uppercase italic tracking-tighter text-lg text-primary-text truncate max-w-[200px]">{activity.name}</h3>
+          <button 
+            onClick={() => setShowShareModal(true)}
+            className="p-2 rounded-full transition-all flex items-center gap-2 hover:bg-dark-border text-primary-text"
+          >
+            <Share2 size={20} />
+            <span className="text-[8px] font-black uppercase tracking-widest hidden md:inline">Delen</span>
+          </button>
+        </div>
+      )}
 
-      <div className="p-4 space-y-8 max-w-4xl mx-auto mt-6">
+      {/* Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-charcoal border border-dark-border w-full max-w-md rounded-[2.5rem] p-8 space-y-8 shadow-2xl relative overflow-hidden">
+            <button onClick={() => setShowShareModal(false)} className="absolute top-6 right-6 p-2 text-secondary-text hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            
+            <div className="text-center space-y-2">
+              <h4 className="text-2xl font-black italic tracking-tighter uppercase text-electric-blue">Deel je Stats</h4>
+              <p className="text-[10px] text-secondary-text uppercase font-black tracking-widest">Scan of kopieer de link</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl w-fit mx-auto shadow-xl">
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}`} 
+                alt="QR Code"
+                className="w-48 h-48"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-black/40 border border-dark-border p-4 rounded-2xl flex items-center justify-between gap-4">
+                <span className="text-[10px] text-secondary-text font-mono truncate flex-1">{shareUrl}</span>
+                <button 
+                  onClick={copyToClipboard}
+                  className={`p-3 rounded-xl transition-all ${isCopied ? 'bg-green-500 text-white' : 'bg-dark-border/50 text-white hover:bg-electric-blue'}`}
+                >
+                  {isCopied ? <Check size={18} /> : <Copy size={18} />}
+                </button>
+              </div>
+              
+              <button 
+                onClick={() => window.open(shareUrl, '_blank')}
+                className="w-full py-4 bg-electric-blue text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform shadow-lg shadow-electric-blue/20"
+              >
+                <ExternalLink size={16} /> Open Voorbeeld
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={`p-4 space-y-8 max-w-4xl mx-auto ${isSharedView ? '' : 'mt-6'}`}>
         {/* Metric Header */}
         <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-2xl space-y-6 relative overflow-hidden blue-glow">
           {activity.isRace && (
@@ -98,33 +168,35 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
         </div>
 
         {/* AI Analysis Section */}
-        <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-2xl space-y-6 relative overflow-hidden border-electric-blue/30">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xs font-black uppercase tracking-widest text-primary-text flex items-center gap-2">
-              <Sparkles size={18} className="text-electric-blue" /> AI Performance Coach
-            </h3>
-            {!aiAnalysis && (
-              <button 
-                onClick={handleAiAnalysis}
-                disabled={isAnalyzing}
-                className="bg-electric-blue text-white px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all flex items-center gap-2"
-              >
-                {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                Analyseer Sessie
-              </button>
+        {(!isSharedView || aiAnalysis) && (
+          <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-2xl space-y-6 relative overflow-hidden border-electric-blue/30">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-black uppercase tracking-widest text-primary-text flex items-center gap-2">
+                <Sparkles size={18} className="text-electric-blue" /> AI Performance Coach
+              </h3>
+              {!aiAnalysis && !isSharedView && (
+                <button 
+                  onClick={handleAiAnalysis}
+                  disabled={isAnalyzing}
+                  className="bg-electric-blue text-white px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all flex items-center gap-2"
+                >
+                  {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                  Analyseer Sessie
+                </button>
+              )}
+            </div>
+            
+            {aiAnalysis ? (
+              <div className="text-sm text-secondary-text leading-relaxed font-medium animate-in fade-in slide-in-from-top-4 duration-500 whitespace-pre-wrap">
+                {aiAnalysis}
+              </div>
+            ) : !isSharedView && (
+              <p className="text-[10px] text-secondary-text uppercase font-bold tracking-widest italic opacity-50">
+                {isAnalyzing ? "Coach analyseert de data..." : "Klik op de knop voor een diepe duik in je data."}
+              </p>
             )}
           </div>
-          
-          {aiAnalysis ? (
-            <div className="text-sm text-secondary-text leading-relaxed font-medium animate-in fade-in slide-in-from-top-4 duration-500 whitespace-pre-wrap">
-              {aiAnalysis}
-            </div>
-          ) : (
-            <p className="text-[10px] text-secondary-text uppercase font-bold tracking-widest italic opacity-50">
-              {isAnalyzing ? "Coach analyseert de data..." : "Klik op de knop voor een diepe duik in je data."}
-            </p>
-          )}
-        </div>
+        )}
 
         {/* Hyrox Specific Display */}
         {activity.hyroxData && (
@@ -135,7 +207,7 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
         )}
 
         {/* Trend Graph Section */}
-        {trendData.length > 1 && (
+        {!isSharedView && trendData.length > 1 && (
           <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border space-y-6 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-widest text-secondary-text flex items-center gap-2"><History size={18} className="text-electric-blue"/> Trend (Laatste 10)</h3>
@@ -154,7 +226,7 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
                     dataKey="pace" 
                     stroke="#4D7CFF" 
                     strokeWidth={4} 
-                    dot={(props) => {
+                    dot={(props: any) => {
                       const { cx, cy, payload } = props;
                       return payload.isCurrent ? <circle cx={cx} cy={cy} r={6} fill="#4D7CFF" stroke="#121212" strokeWidth={3} /> : <circle cx={cx} cy={cy} r={3} fill="#444444" />;
                     }}
@@ -166,16 +238,16 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Labels */}
             <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-xl h-full">
               <h3 className="text-xs font-black uppercase tracking-widest text-secondary-text flex items-center gap-2 mb-6"><Tag size={18} className="text-electric-blue" /> Labels</h3>
               <div className="flex flex-wrap gap-2">
-                {availableLabels.map(l => {
-                  const active = activity.labels.some(al => al.id === l.id);
+                {(isSharedView ? activity.labels : availableLabels).map(l => {
+                  const active = activity.labels.some(al => al.id === l.id || al.name === l.name);
                   return (
                     <button 
-                      key={l.id}
+                      key={l.id || l.name}
                       onClick={() => toggleLabel(l)}
+                      disabled={isSharedView}
                       className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-electric-blue text-white border-electric-blue shadow-lg' : 'bg-dark-border/20 text-secondary-text border-dark-border hover:border-secondary-text'}`}
                     >
                       {l.name}
@@ -185,8 +257,7 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
               </div>
             </div>
 
-            {/* Laps */}
-            {activity.laps.length > 0 && (
+            {!isSharedView && activity.laps && activity.laps.length > 0 && (
               <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-xl space-y-6">
                 <h3 className="text-xs font-black uppercase tracking-widest text-secondary-text flex items-center gap-2"><Zap size={18} className="text-electric-blue" /> Ronde Details</h3>
                 <div className="overflow-x-auto">
@@ -229,7 +300,10 @@ const Metric = ({ title, value }: { title: string, value: string }) => (
 const HyroxDisplay = ({ currentData, previousData }: { currentData: any, previousData?: any }) => (
   <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-2xl space-y-8">
     <div className="flex justify-between items-center">
-      <h3 className="text-xs font-black uppercase tracking-widest text-secondary-text flex items-center gap-2"><Trophy size={18} className="text-electric-blue" /> Hyrox Stations</h3>
+      <div className="flex items-center gap-4">
+        <h3 className="text-xs font-black uppercase tracking-widest text-secondary-text flex items-center gap-2"><Trophy size={18} className="text-electric-blue" /> Hyrox Stations</h3>
+        <span className="text-[9px] font-black text-secondary-text/50 uppercase tracking-widest bg-dark-border/20 px-2 py-0.5 rounded-full">{currentData.category} • {currentData.division}</span>
+      </div>
       {currentData.totalScore && <span className="bg-electric-blue/10 text-electric-blue border border-electric-blue px-4 py-1 rounded-full font-black text-[10px] tracking-widest">SCORE: {currentData.totalScore}</span>}
     </div>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -259,7 +333,7 @@ const HyroxDisplay = ({ currentData, previousData }: { currentData: any, previou
               </div>
               <div className="flex flex-col">
                 <span className="text-[8px] text-secondary-text font-black uppercase tracking-widest mb-1">{part.name === 'Wall Balls' ? 'Reps' : 'Afstand'}</span>
-                <span className="font-black text-sm text-primary-text">{part.name === 'Wall Balls' ? part.reps : `${part.distance}m`}</span>
+                <span className="font-black text-sm text-primary-text">{part.name === 'Wall Balls' ? part.reps : `${part.distance || 0}m`}</span>
               </div>
             </div>
           </div>
