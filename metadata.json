@@ -1,0 +1,5 @@
+{
+  "name": "Strava Performance Lab",
+  "description": "Een geavanceerde sport-analyse tool voor Strava data, met focus op progressie per label, Hyrox tracking en krachtstatistieken.",
+  "requestFramePermissions": []
+}
