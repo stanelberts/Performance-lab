@@ -1,10 +1,11 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Activity, Label, HyroxPart } from '../types';
-import { ArrowLeft, Calendar, Tag, TrendingDown, TrendingUp, Zap, History, Trophy, Medal } from 'lucide-react';
+import { ArrowLeft, Calendar, Tag, TrendingDown, TrendingUp, Zap, History, Trophy, Medal, Sparkles, Loader2 } from 'lucide-react';
 import { formatDuration, formatPace, getComparison, getEfficiencyFactor } from '../utils/analysis';
 import { ActivityIconByType } from './Dashboard';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell, LineChart, Line, CartesianGrid } from 'recharts';
+import { analyzeWorkout } from '../services/ai';
 
 interface Props {
   activity: Activity;
@@ -15,6 +16,9 @@ interface Props {
 }
 
 const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, onUpdateLabels, availableLabels }) => {
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   const currentLabels = activity.labels.map(l => l.name);
   
   const history = useMemo(() => {
@@ -29,8 +33,6 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
     return sortedHistory.find(a => a.id !== activity.id && new Date(a.startDate) < new Date(activity.startDate));
   }, [history, activity]);
 
-  const comparison = getComparison(activity, previousActivity);
-
   const trendData = useMemo(() => {
     return history.map(a => ({
       date: new Date(a.startDate).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' }),
@@ -40,6 +42,13 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
       isCurrent: a.id === activity.id
     })).slice(-10);
   }, [history, activity]);
+
+  const handleAiAnalysis = async () => {
+    setIsAnalyzing(true);
+    const result = await analyzeWorkout(activity);
+    setAiAnalysis(result || "Geen analyse beschikbaar.");
+    setIsAnalyzing(false);
+  };
 
   const toggleLabel = (label: Label) => {
     const hasLabel = activity.labels.some(l => l.id === label.id);
@@ -86,6 +95,35 @@ const ActivityDetailView: React.FC<Props> = ({ activity, allActivities, onBack, 
             <Metric title="Gem. Tempo" value={`${formatPace(activity.distance / activity.movingTime)} /km`} />
             <Metric title="Efficiëntie" value={getEfficiencyFactor(activity) ? (getEfficiencyFactor(activity)! * 100).toFixed(1) : '--'} />
           </div>
+        </div>
+
+        {/* AI Analysis Section */}
+        <div className="bg-charcoal p-8 rounded-[2rem] border border-dark-border shadow-2xl space-y-6 relative overflow-hidden border-electric-blue/30">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xs font-black uppercase tracking-widest text-primary-text flex items-center gap-2">
+              <Sparkles size={18} className="text-electric-blue" /> AI Performance Coach
+            </h3>
+            {!aiAnalysis && (
+              <button 
+                onClick={handleAiAnalysis}
+                disabled={isAnalyzing}
+                className="bg-electric-blue text-white px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all flex items-center gap-2"
+              >
+                {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                Analyseer Sessie
+              </button>
+            )}
+          </div>
+          
+          {aiAnalysis ? (
+            <div className="text-sm text-secondary-text leading-relaxed font-medium animate-in fade-in slide-in-from-top-4 duration-500 whitespace-pre-wrap">
+              {aiAnalysis}
+            </div>
+          ) : (
+            <p className="text-[10px] text-secondary-text uppercase font-bold tracking-widest italic opacity-50">
+              {isAnalyzing ? "Coach analyseert de data..." : "Klik op de knop voor een diepe duik in je data."}
+            </p>
+          )}
         </div>
 
         {/* Hyrox Specific Display */}
